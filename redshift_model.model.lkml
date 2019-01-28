@@ -46,7 +46,7 @@ explore: redshift_tables {
     sql_on: ${redshift_queries.query} = ${redshift_query_execution.query} ;;
     relationship: many_to_one
     type: left_outer
-    fields: [query,start_date, time_executing, substring,count,total_time_executing,time_executing_per_query]
+    fields: [query,start_date, time_executing, snippet, pdt, count,total_time_executing,time_executing_per_query]
   }
 }
 

@@ -353,14 +353,26 @@ view: redshift_queries {
     sortkeys: ["query"]
     sql: SELECT
         wlm.query,
-        q.substring::varchar,
+        COALESCE(qlong.querytxt,q.substring)::varchar as text,
+        SUBSTRING(
+          REGEXP_REPLACE(COALESCE(qlong.querytxt,q.substring)::varchar,'^\\s*-- ([A-Za-z ]*''\\{[^}]*\\}''.|Building [^ ]+( in dev mode)? on instance [0-9a-f]+.)','')
+          ,1,100) as snippet,
+        CASE
+          WHEN COALESCE(qlong.querytxt,q.substring)::varchar NOT ILIKE '-- Building %'
+          THEN 'No'
+          WHEN COALESCE(qlong.querytxt,q.substring)::varchar ILIKE '% in dev mode on instance %'
+          THEN 'Dev'
+          ELSE 'Prod'
+          END as pdt,
+        REGEXP_SUBSTR(COALESCE(qlong.querytxt,q.substring)::varchar,'^\\s*-- [A-Za-z ]*''\\{[^}]*"user_id":(\\d+)',1,1,'e') as looker_user_id,
+        REGEXP_SUBSTR(COALESCE(qlong.querytxt,q.substring)::varchar,'^\\s*-- [A-Za-z ]*''\\{[^}]*"history_id":(\\d+)',1,1,'e') as looker_history_id,
+        REGEXP_SUBSTR(COALESCE(qlong.querytxt,q.substring)::varchar,'^\\s*-- [^}]*instance_?s?l?u?g?"?:?"? ?([0-9a-f]+)',1,1,'e') as looker_instance_slug,
         sc.name as service_class,
         --wlm.service_class as service_class, --Use if connection was not given access to STV_WLM_SERVICE_CLASS_CONFIG
         wlm.service_class_start_time as start_time,
         wlm.total_queue_time,
         wlm.total_exec_time,
-        q.elapsed, --Hmm.. this measure seems to be greater than queue_time+exec_time
-        COALESCE(qlong.querytxt,q.substring)::varchar as querytxt
+        q.elapsed --Hmm.. this measure seems to be greater than queue_time+exec_time
       FROM STL_WLM_QUERY wlm
       LEFT JOIN STV_WLM_SERVICE_CLASS_CONFIG sc ON sc.service_class=wlm.service_class -- Remove this line if access was not granted
       LEFT JOIN SVL_QLOG q on q.query=wlm.query
@@ -371,15 +383,49 @@ view: redshift_queries {
     #STL_QUERY vs SVL_QLOG. STL_QUERY has more characters of query text (4000), but is only retained for "2 to 5 days"
     # STL_WLM_QUERY or SVL_QUERY_QUEUE_INFO? http://docs.aws.amazon.com/redshift/latest/dg/r_SVL_QUERY_QUEUE_INFO.html
   }
+  #Looker Query Context '{"user_id":711,"history_id":38026310,"instance_slug":"186fb89f0c23199fffd36f1cdfb6152b"}
   dimension: query {
+    description: "Redshift's Query ID"
     type: number
-    sql: ${TABLE}.query ;;
     primary_key: yes
     link: {
       label: "Inspect"
       url: "/dashboards/redshift_model::redshift_query_inspection?query={{value}}"
     }
   }
+  dimension: text {
+    alias: [querytxt]
+  }
+  dimension: snippet {
+    alias: [substring]
+  }
+  dimension: looker_user_id {
+    group_label: "Looker Query Context"
+    type: number
+    link: {
+      label: "View in Looker Admin"
+      url: "/admin/users/{{value}}/edit"
+      # ^ Note that in scenarios with multiple Looker instances, this may not be the right link!
+    }
+  }
+  dimension: looker_history_id {
+    group_label: "Looker Query Context"
+    type: number
+    link: {
+      label: "View in Looker Admin"
+      url: "/admin/queries/{{value}}"
+      # ^ Note that in scenarios with multiple Looker instances, this may not be the right link!
+    }
+  }
+  dimension: looker_instance_slug {
+    group_label: "Looker Query Context"
+  }
+  dimension: pdt {
+    label: "Is PDT?"
+    group_label: "Looker Query Context"
+    description: "Either Prod, Dev, or No"
+  }
+
   dimension_group: start {
     type: time
     timeframes: [raw, minute,second, minute15, hour, hour_of_day, day_of_week, date]
@@ -441,21 +487,13 @@ view: redshift_queries {
     description: "Amount of time (from another table, for comparison...)"
     sql: ${TABLE}.elapsed / 1000000 ;;
   }
-  dimension: substring {
-    type: string
-    sql: ${TABLE}.substring ;;
-  }
-  dimension: text {
-    type: string
-    sql: ${TABLE}.querytxt ;;
-  }
   dimension:  was_queued {
     type: yesno
     sql: ${TABLE}.total_queue_time > 0;;
   }
   measure: count {
     type: count
-    drill_fields: [query, start_date, time_executing, substring]
+    drill_fields: [query, start_date, time_executing, pdt, looker_history_id, snippet ]
   }
   measure: count_of_queued {
     type: sum
