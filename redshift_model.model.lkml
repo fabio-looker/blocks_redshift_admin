@@ -8,8 +8,14 @@ case_sensitive: no
 include: "redshift_*.dashboard"
 include: "redshift_*.view"
 
+datagroup: nightly {
+  sql_trigger: SELECT TIMEZONE('US/Pacific',GETDATE())::DATE;;
+}
+
+persist_with: nightly
+
 explore: redshift_data_loads {
-   hidden: yes
+  hidden: yes
 }
 
 explore: redshift_db_space {
@@ -22,7 +28,6 @@ explore: redshift_etl_errors {
 
 explore: redshift_tables {
   hidden: yes
-  persist_for: "0 seconds"
   view_label: "[Redshift Tables]"
   join: redshift_query_execution {
     sql_on: ${redshift_query_execution.table_join_key}=${redshift_tables.table_join_key};;
@@ -47,7 +52,6 @@ explore: redshift_tables {
 
 explore: redshift_plan_steps {
   hidden: yes
-  persist_for: "0 seconds"
   join: redshift_tables {
     sql_on: ${redshift_tables.table}=${redshift_plan_steps.table} ;;
     type: left_outer

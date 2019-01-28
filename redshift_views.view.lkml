@@ -167,11 +167,12 @@ view: redshift_data_loads {
 }
 
 view: redshift_plan_steps {
-  #For recent queries based on redshift_queries
   #description: "Steps from the query planner for recent queries to Redshift"
   derived_table: {
     # Insert into PDT because redshift won't allow joining certain system tables/views onto others (presumably because they are located only on the leader node)
-    sql_trigger_value: SELECT FLOOR((EXTRACT(epoch from GETDATE()) - 60*60*23)/(60*60*24)) ;; #23h
+    datagroup_trigger: nightly
+    distribution: "query"
+    sortkeys: ["query"]
     sql:
         SELECT
         query, nodeid, parentid,
@@ -198,8 +199,7 @@ view: redshift_plan_steps {
         AND query<=(SELECT max(query) FROM ${redshift_queries.SQL_TABLE_NAME})
     ;;
     #TODO?: Currently not extracting the sequential scan column, but I'm not sure if this is useful to extract. What's more useful as far as I can tell are the fields in the filter (operation argument)
-    distribution: "query"
-    sortkeys: ["query"]
+
   }
   dimension: query {
     sql: ${TABLE}.query;;
@@ -346,15 +346,15 @@ view: redshift_plan_steps {
 }
 
 view: redshift_queries {
-  # Recent is last 24 hours of queries
-  # (we only see queries related to our rs user_id)
+  # Limited to last 24 hours of queries
   derived_table: {
-    sql_trigger_value: SELECT FLOOR((EXTRACT(epoch from GETDATE()) - 60*60*22)/(60*60*24)) ;; #22h
+    datagroup_trigger: nightly
+    distribution: "query"
+    sortkeys: ["query"]
     sql: SELECT
         wlm.query,
         q.substring::varchar,
         sc.name as service_class,
-
         --wlm.service_class as service_class, --Use if connection was not given access to STV_WLM_SERVICE_CLASS_CONFIG
         wlm.service_class_start_time as start_time,
         wlm.total_queue_time,
@@ -367,12 +367,9 @@ view: redshift_queries {
       LEFT JOIN STL_QUERY qlong on qlong.query=q.query
       WHERE wlm.service_class_start_time >= dateadd(day,-1,GETDATE())
       AND wlm.service_class_start_time <= GETDATE()
-      --WHERE wlm.query>=(SELECT MAX(query)-5000 FROM STL_WLM_QUERY)
     ;;
     #STL_QUERY vs SVL_QLOG. STL_QUERY has more characters of query text (4000), but is only retained for "2 to 5 days"
     # STL_WLM_QUERY or SVL_QUERY_QUEUE_INFO? http://docs.aws.amazon.com/redshift/latest/dg/r_SVL_QUERY_QUEUE_INFO.html
-    distribution: "query"
-    sortkeys: ["query"]
   }
   dimension: query {
     type: number
@@ -501,11 +498,10 @@ view: redshift_slices {
   # Use the STV_SLICES table to view the current mapping of a slice to a node.
   # This table is visible to all users. Superusers can see all rows; regular users can see only their own data.
   derived_table: {
-    #sql_trigger_value: SELECT FLOOR((EXTRACT(epoch from GETDATE()) - 60*60*22)/(60*60*24)) ;; #22h
-    persist_for: "12 hours"
-    sql: SELECT slice,node FROM STV_SLICES;;
+    datagroup_trigger: nightly
     distribution_style: "all"
     sortkeys: ["node"]
+    sql: SELECT slice,node FROM STV_SLICES;;
   }
   dimension: node{
     type: number
@@ -529,8 +525,11 @@ view: redshift_slices {
 
 view: redshift_tables {
   derived_table: {
-    # Insert into PDT because redshift won't allow joining certain system tables/views onto others (presumably because they are located only on the leader node)
-    persist_for: "8 hours"
+    # Insert into PDT because Redshift won't allow joining certain system tables/views onto others (presumably because they are located only on the leader node)
+    datagroup_trigger: nightly
+    distribution_style: all
+    indexes: ["table_id","table"] # "indexes" translates to an interleaved sort key for Redshift
+    # http://docs.aws.amazon.com/redshift/latest/dg/r_SVV_TABLE_INFO.html
     sql: select
         "database"::varchar,
         "schema"::varchar,
@@ -551,9 +550,6 @@ view: redshift_tables {
         "skew_rows"::numeric
       from svv_table_info
     ;;
-    # http://docs.aws.amazon.com/redshift/latest/dg/r_SVV_TABLE_INFO.html
-      distribution_style: all
-      indexes: ["table_id","table"] # "indexes" translates to an interleaved sort key for Redshift
     }
 
     # dimensions #
@@ -722,7 +718,9 @@ view: redshift_query_execution {
   #description: "Steps from the query planner for recent queries to Redshift"
   derived_table: {
     # Insert into PDT because redshift won't allow joining certain system tables/views onto others (presumably because they are located only on the leader node)
-    sql_trigger_value: SELECT FLOOR((EXTRACT(epoch from GETDATE()) - 60*60*23)/(60*60*24)) ;; #23h
+    datagroup_trigger: nightly
+    distribution: "query"
+    sortkeys: ["query"]
     sql:
         SELECT
           query ||'.'|| seg || '.' || step as id,
@@ -757,8 +755,6 @@ view: redshift_query_execution {
         AND query<=(SELECT max(query) FROM ${redshift_queries.SQL_TABLE_NAME})
         GROUP BY query, seg, step, label
       ;;
-      distribution: "query"
-      sortkeys: ["query"]
     }
   # or svl_query_report to not aggregate over slices under each step
   #using group by because sometimes steps are duplicated.seems to be when some slices are diskbased, others not
