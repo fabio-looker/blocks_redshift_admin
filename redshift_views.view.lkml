@@ -253,18 +253,16 @@ view: redshift_plan_steps {
     description: "AWS Docs http://docs.aws.amazon.com/redshift/latest/dg/c_data_redistribution.html"
     sql: ${TABLE}.network_distribution_type ;;
     type: "string"
-    html:
-    {% if value == 'DS_DIST_ALL_INNER' or value == 'DS_BCAST_INNER' %}
-      <span style="color: darkred">{{ rendered_value }}</span>
-    {% elsif value == 'DS_DIST_BOTH' %}
-      <span style="color: darkorange">{{ rendered_value }}</span>
-    {% elsif value == 'DS_DIST_ALL_NONE' or value == 'DS_DIST_NONE'%}
-      <span style="color: green">{{ rendered_value }}</span>
-    {% else %}
-      {{ rendered_value }}
-    {% endif %}
+    html: <span style="color: {% if
+     value == 'DS_DIST_NONE' %} #37ce12 {% elsif
+     value == 'DS_DIST_ALL_NONE' %} #17470c {% elsif
+     value == 'DS_DIST_INNER' %} #5f7c58 {% elsif
+     value == 'DS_DIST_OUTER' %} #ff8828 {% elsif
+     value == 'DS_DIST_BOTH' %} #c13c07 {% elsif
+     value == 'DS_BCAST_INNER' %} #d6a400 {% elsif
+     value == 'DS_DIST_ALL_INNER' %} #9e0f62 {% else
+    %} black {% endif %}">{{ rendered_value }}</span>
     ;;
-    #DS_DIST_OUTER is not even in the AWS Docs...?
   }
   dimension: network_distribution_bytes {
     #TODO: Multiply by number of nodes if BCAST?

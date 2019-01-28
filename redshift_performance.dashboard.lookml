@@ -114,12 +114,13 @@
     limit_displayed_rows: false
     series_types: {}
     series_colors:
-      DS_BCAST_INNER: "#d3271d"
-      DS_DIST_BOTH: "#fa6600"
-      DS_DIST_INNER: "#82c400"
-      DS_DIST_NONE: "#276300"
-      DS_DIST_ALL_INNER: "#5f00cf"
-      DS_DIST_ALL_NONE: "#1c8b19"
+      DS_DIST_NONE: "#37ce12"
+      DS_DIST_ALL_NONE: "#17470c"
+      DS_DIST_INNER: "#5f7c58"
+      DS_DIST_OUTER: "#ff8828"
+      DS_DIST_BOTH: "#c13c07"
+      DS_BCAST_INNER: "#d6a400"
+      DS_DIST_ALL_INNER: "#9e0f62"
     listen:
       PDT: redshift_queries.pdt
     row: 8
