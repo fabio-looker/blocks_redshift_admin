@@ -354,7 +354,8 @@ view: redshift_queries {
         wlm.query,
         q.substring::varchar,
         sc.name as service_class,
-        --wlm.service_class as service_class --Use if connection was not given access to STV_WLM_SERVICE_CLASS_CONFIG
+
+        --wlm.service_class as service_class, --Use if connection was not given access to STV_WLM_SERVICE_CLASS_CONFIG
         wlm.service_class_start_time as start_time,
         wlm.total_queue_time,
         wlm.total_exec_time,
@@ -384,7 +385,7 @@ view: redshift_queries {
   }
   dimension_group: start {
     type: time
-    timeframes: [raw, minute15, hour, day_of_week, date]
+    timeframes: [raw, minute,second, minute15, hour, hour_of_day, day_of_week, date]
     sql: ${TABLE}.start_time ;;
   }
   dimension: service_class {
@@ -875,7 +876,9 @@ view: redshift_query_execution {
     sql: MAX(${was_diskbased}) ;;
     html:
       {% if value == 'Yes' %}
-      <span style="color: darkred">{{ rendered_value }}</span>
+      <span style="color: darkred; font-weight:bold">{{ rendered_value }}</span>
+      {% elsif value == 'No' %}
+      <span style="color: green">{{ rendered_value }}</span>
       {% else %}
       {{ rendered_value }}
       {% endif %}
