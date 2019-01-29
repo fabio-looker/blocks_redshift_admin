@@ -174,29 +174,42 @@ view: redshift_plan_steps {
     distribution: "query"
     sortkeys: ["query"]
     sql:
+        WITH redshift_plan_steps AS
+          (SELECT
+            query, nodeid, parentid,
+            CASE WHEN plannode='SubPlan' THEN 'SubPlan'
+            ELSE substring(regexp_substr(plannode, 'XN( [A-Z][a-z]+)+'),4) END as operation,
+            substring(regexp_substr(plannode, 'DS_[A-Z_]+'),0) as network_distribution_type,
+            substring(info from 1 for 240) as operation_argument,
+            CASE
+              WHEN plannode NOT LIKE '% on %' THEN NULL
+              WHEN plannode LIKE '% on "%' THEN substring(regexp_substr(plannode,' on "[^"]+'),6)
+              ELSE substring(regexp_substr(plannode,' on [\._a-zA-Z0-9]+'),5)
+            END as "table",
+            RIGHT('0'||COALESCE(substring(regexp_substr(plannode,' rows=[0-9]+'),7),''),32)::decimal(38,0) as "rows",
+            RIGHT('0'||COALESCE(substring(regexp_substr(plannode,' width=[0-9]+'),8),''),32)::decimal(38,0) as width,
+            substring(regexp_substr(plannode,'\\(cost=[0-9]+'),7) as cost_lo_raw,
+            substring(regexp_substr(plannode,'\\.\\.[0-9]+'),3) as cost_hi_raw,
+            CASE
+              WHEN cost_hi_raw != '' THEN
+                ( CASE WHEN LEN(cost_hi_raw) > 18 THEN 999999999999999999::DECIMAL(38,0) ELSE cost_hi_raw::DECIMAL(38,0) END )
+              ELSE NULL END  as cost_hi_numeric,
+            CASE
+              WHEN COALESCE(parentid,0)=0 THEN 'root'
+              WHEN nodeid = MAX(nodeid) OVER (PARTITION BY query,parentid) THEN 'inner'
+              ELSE 'outer' END::CHAR(5) as inner_outer,
+            SUM(cost_hi_numeric) OVER (PARTITION by query,parentid) as sum_children_cost
+          FROM stl_explain
+          WHERE query>=(SELECT min(query) FROM ${redshift_queries.SQL_TABLE_NAME})
+            AND query<=(SELECT max(query) FROM ${redshift_queries.SQL_TABLE_NAME})
+          GROUP BY 1,2,3,4,5,6,7,8,9,10,11,12)
         SELECT
-        query, nodeid, parentid,
-        CASE WHEN plannode='SubPlan' THEN 'SubPlan'
-        ELSE substring(regexp_substr(plannode, 'XN( [A-Z][a-z]+)+'),4) END as operation,
-        substring(regexp_substr(plannode, 'DS_[A-Z_]+'),0) as network_distribution_type,
-        substring(info from 1 for 240) as operation_argument,
-        CASE
-          WHEN plannode NOT LIKE '% on %' THEN NULL
-          WHEN plannode LIKE '% on "%' THEN substring(regexp_substr(plannode,' on "[^"]+'),6)
-          ELSE substring(regexp_substr(plannode,' on [\._a-zA-Z0-9]+'),5)
-        END as "table",
-        RIGHT('0'||COALESCE(substring(regexp_substr(plannode,' rows=[0-9]+'),7),''),32)::decimal(38,0) as "rows",
-        RIGHT('0'||COALESCE(substring(regexp_substr(plannode,' width=[0-9]+'),8),''),32)::decimal(38,0) as width,
-        substring(regexp_substr(plannode,'\\(cost=[0-9]+'),7) as cost_lo,
-        substring(regexp_substr(plannode,'\\.\\.[0-9]+'),3) as cost_hi,
-        CASE
-          WHEN COALESCE(parentid,0)=0 THEN 'root'
-          WHEN nodeid = MAX(nodeid) OVER (PARTITION BY query,parentid) THEN 'inner'
-          ELSE 'outer'
-        END::CHAR(5) as inner_outer
-      FROM stl_explain
-      WHERE query>=(SELECT min(query) FROM ${redshift_queries.SQL_TABLE_NAME})
-        AND query<=(SELECT max(query) FROM ${redshift_queries.SQL_TABLE_NAME})
+          redshift_plan_steps.*,
+          redshift_plan_steps.cost_hi_numeric - COALESCE(x.sum_children_cost,0) AS incremental_step_cost
+        FROM redshift_plan_steps
+        LEFT JOIN (SELECT query, parentid, sum_children_cost FROM redshift_plan_steps GROUP BY 1,2,3) AS x
+          ON redshift_plan_steps.query = x.query AND redshift_plan_steps.nodeid = x.parentid
+        ORDER BY 1,3
     ;;
     #TODO?: Currently not extracting the sequential scan column, but I'm not sure if this is useful to extract. What's more useful as far as I can tell are the fields in the filter (operation argument)
 
@@ -307,9 +320,31 @@ view: redshift_plan_steps {
     type: "string"
     sql: ${TABLE}.inner_outer ;;
   }
+  dimension: cost_lo_raw {
+    description: "Cumulative relative cost of returning the first row for this step"
+    type: string
+    sql: ${TABLE}.cost_lo_raw ;;
+    hidden: yes
+  }
+  dimension: cost_hi_raw {
+    description: "Cumulative relative cost of completing this step"
+    type: string
+    sql: ${TABLE}.cost_hi_raw ;;
+    hidden: yes
+  }
+  dimension: incremental_step_cost {
+    description: "Incremental relative cost of completing this step"
+    type: number
+    sql: ${TABLE}.incremental_step_cost ;;
+  }
   measure: count {
     type: count
     drill_fields: [query, parent_step, step, operation, operation_argument, network_distribution_type]
+  }
+  measure: step_cost {
+    type: sum
+    sql: ${incremental_step_cost} ;;
+    description: "Relative cost of completing steps"
   }
   measure: total_rows{
     label: "Total rows out"
