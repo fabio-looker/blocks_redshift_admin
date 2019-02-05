@@ -235,6 +235,15 @@ view: redshift_plan_steps {
     sql: ${TABLE}.parentid;;
     hidden: yes
   }
+  dimension: step_description {
+    description: "Concatenation of 'operation - network distribution type - table'"
+    sql: CASE WHEN COALESCE(${operation},'') = '' THEN '' ELSE ${operation} END ||
+           CASE WHEN COALESCE(${operation_argument},'') = '' THEN '' ELSE ' - ' || ${operation_argument} END ||
+           CASE WHEN COALESCE(${network_distribution_type},'') = '' THEN '' ELSE ' - ' || ${network_distribution_type} END ||
+           CASE WHEN COALESCE(${table},'') = '' THEN '' ELSE ' - ' || ${table} END ;;
+    type: "string"
+    hidden: yes
+  }
   dimension: operation {
     label: "Operation"
     sql: ${TABLE}.operation ;;
