@@ -180,7 +180,10 @@ view: redshift_plan_steps {
             CASE WHEN plannode='SubPlan' THEN 'SubPlan'
             ELSE substring(regexp_substr(plannode, 'XN( [A-Z][a-z]+)+'),4) END as operation,
             substring(regexp_substr(plannode, 'DS_[A-Z_]+'),0) as network_distribution_type,
-            substring(info from 1 for 240) as operation_argument,
+            REGEXP_REPLACE(REGEXP_REPLACE(
+              substring(info from 1 for 240)
+              , '\'(\\\\\.|[^\'\\\\\])+(\'|$|\\\\\$)', '[Redacted String]'), '[0-9][0-9]+', '[Redacted Int]')
+              as operation_argument,
             CASE
               WHEN plannode NOT LIKE '% on %' THEN NULL
               WHEN plannode LIKE '% on "%' THEN substring(regexp_substr(plannode,' on "[^"]+'),6)
@@ -386,10 +389,19 @@ view: redshift_queries {
     sortkeys: ["query"]
     sql: SELECT
         wlm.query,
-        COALESCE(qlong.querytxt,q.substring)::varchar as text,
+        -- To expose unredacted query text, use:
+        -- COALESCE(qlong.querytxt,q.substring)::varchar as test
+        -- instead of the below
+        REGEXP_REPLACE(REGEXP_REPLACE(
+          COALESCE(qlong.querytxt,q.substring)::varchar
+          , '\'(\\\\\.|[^\'\\\\\])+(\'|$|\\\\\$)', '[Redacted String]'), '[0-9][0-9]+', '[Redacted Int]')
+          as text,
+        REGEXP_REPLACE(REGEXP_REPLACE(
         SUBSTRING(
           REGEXP_REPLACE(COALESCE(qlong.querytxt,q.substring)::varchar,'^\\s*-- ([A-Za-z ]*''\\{[^}]*\\}''.|Building [^ ]+( in dev mode)? on instance [0-9a-f]+.)','')
-          ,1,100) as snippet,
+          ,1,100)
+          , '\'(\\\\\.|[^\'\\\\\])+(\'|$|\\\\\$)', '[Redacted String]'), '[0-9][0-9]+', '[Redacted Int]')
+          as snippet,
         CASE
           WHEN COALESCE(qlong.querytxt,q.substring)::varchar NOT ILIKE '-- Building %'
           THEN 'No'
@@ -613,7 +625,7 @@ view: redshift_tables {
         "sortkey1_enc"::varchar,
         "sortkey_num"::int,
         "size"::bigint,
-        "pct_used"::numeric,
+        "pct_used"::decimal(10,4),
         "unsorted"::numeric,
         "stats_off"::numeric,
         "tbl_rows"::bigint,
@@ -812,6 +824,11 @@ view: redshift_tables {
       description: "Size of the table(s), in 1 MB data blocks"
       type: sum
       sql: ${size} ;;
+    }
+    measure: total_percent_used {
+      description: "Total percent used by the tables"
+      type: sum
+      sql: ${pct_used} ;;
     }
   }
 
