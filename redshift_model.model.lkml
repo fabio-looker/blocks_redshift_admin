@@ -1,6 +1,6 @@
-# # https://github.com/llooker/blocks_redshift_admin
-# #
-# # Make sure this is a connection where the database user has sufficient permissions (per above link)
+ # https://github.com/llooker/blocks_redshift_admin
+ #
+ # Make sure this is a connection where the database user has sufficient permissions (per above link)
 
 connection: "meta"
 case_sensitive: no
